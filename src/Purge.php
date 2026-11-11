@@ -18,12 +18,16 @@ use Doctrine\DBAL\Types\Types;
  *   appdata/<app>/...              copy of appdata_<instanceid>/<app>
  */
 final class Purge {
-	/** Row kinds outside the app's own tables: kind => [table, column that holds the app id, autoincrement column] */
+	/**
+	 * Row kinds outside the app's own tables: kind => [table, column that holds the app id].
+	 * Rows are restored with their original ids (oc_jobs.id has no autoincrement since
+	 * Nextcloud 33; the deleted ids are not reused by sequences either).
+	 */
 	private const ROWS = [
-		'appconfig' => ['appconfig', 'appid', null],
-		'preferences' => ['preferences', 'appid', null],
-		'migrations' => ['migrations', 'app', null],
-		'notifications' => ['notifications', 'app', 'notification_id'],
+		'appconfig' => ['appconfig', 'appid'],
+		'preferences' => ['preferences', 'appid'],
+		'migrations' => ['migrations', 'app'],
+		'notifications' => ['notifications', 'app'],
 	];
 
 	/** @var list<string> */
@@ -164,12 +168,12 @@ final class Purge {
 				$this->fixSequences($t, $def['columns']);
 				$this->log[] = "restored table $t ($n rows)";
 			}
-			foreach (self::ROWS + ['jobs' => ['jobs', 'class', 'id']] as $kind => [$table, , $autoinc]) {
+			foreach (self::ROWS + ['jobs' => ['jobs', 'class']] as $kind => [$table]) {
 				$file = "$dir/rows/$kind.jsonl";
 				if (!is_file($file)) {
 					continue;
 				}
-				$n = $this->insertRows($this->nc->prefix . $table, $file, null, $app, $autoinc);
+				$n = $this->insertRows($this->nc->prefix . $table, $file, null, $app);
 				$this->log[] = "restored $n $kind row(s) for $app";
 			}
 			$src = "$dir/appdata/$app";
@@ -186,7 +190,7 @@ final class Purge {
 	/**
 	 * @param array<string, string>|null $columns column => Doctrine type name
 	 */
-	private function insertRows(string $table, string $file, ?array $columns, ?string $app, ?string $dropColumn = null): int {
+	private function insertRows(string $table, string $file, ?array $columns, ?string $app): int {
 		$fh = fopen($file, 'r');
 		$n = 0;
 		while (($line = fgets($fh)) !== false) {
@@ -200,12 +204,16 @@ final class Purge {
 			$row = [];
 			$types = [];
 			foreach ($rec as $k => $v) {
-				if ($k === $dropColumn) {
-					continue;
-				}
-				$row[$this->nc->db->getDatabasePlatform()->quoteIdentifier($k)] = Util::decodeValue($v);
+				$value = Util::decodeValue($v);
+				$row[$this->nc->db->getDatabasePlatform()->quoteIdentifier($k)] = $value;
 				$type = $columns[$k] ?? null;
-				$types[] = in_array($type, [Types::BLOB, Types::BINARY], true) ? ParameterType::LARGE_OBJECT : ParameterType::STRING;
+				$types[] = match (true) {
+					in_array($type, [Types::BLOB, Types::BINARY], true) => ParameterType::LARGE_OBJECT,
+					is_bool($value) => ParameterType::BOOLEAN,
+					is_int($value) => ParameterType::INTEGER,
+					$value === null => ParameterType::NULL,
+					default => ParameterType::STRING,
+				};
 			}
 			try {
 				$this->nc->db->insert($table, $row, $types);
