@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: shivammathur/setup-php@2.40.0
+        with:
+          php-version: "8.3"
+          tools: none
+      - name: Lint
+        run: for f in bin/nc-app-purge src/*.php tests/unit/*.php tests/integration/*.php; do php -l "$f"; done
+      - name: Unit tests
+        run: php tests/unit/run.php
+
+  nextcloud:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { nextcloud: latest, db: sqlite }
+          - { nextcloud: latest, db: mysql }
+          - { nextcloud: latest, db: pgsql }
+          - { nextcloud: latest-34, db: sqlite }
+          - { nextcloud: latest-34, db: mysql }
+          - { nextcloud: latest-33, db: pgsql }
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: rootpw
+          MARIADB_DATABASE: nextcloud
+          MARIADB_USER: nextcloud
+          MARIADB_PASSWORD: nextcloud
+        ports: ["3306:3306"]
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-retries=20
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: nextcloud
+          POSTGRES_PASSWORD: nextcloud
+          POSTGRES_DB: nextcloud
+        ports: ["5432:5432"]
+        options: --health-cmd=pg_isready --health-interval=5s --health-retries=20
+    env:
+      ADMIN_PASS: "Purge-Test-Admin-1!"
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: shivammathur/setup-php@2.40.0
+        with:
+          php-version: "8.3"
+          extensions: gd, zip, intl, bcmath, gmp, mbstring, curl, xml, posix, pcntl, pdo_sqlite, pdo_mysql, pdo_pgsql
+          ini-values: memory_limit=1G
+          tools: none
+      - name: Download Nextcloud ${{ matrix.nextcloud }}
+        run: |
+          curl -sSfL --retry 4 -o nc.tar.bz2 "https://download.nextcloud.com/server/releases/${{ matrix.nextcloud }}.tar.bz2"
+          tar xjf nc.tar.bz2 -C "$RUNNER_TEMP"
+          rm nc.tar.bz2
+          grep OC_VersionString "$RUNNER_TEMP/nextcloud/version.php"
+      - name: Install Nextcloud (${{ matrix.db }})
+        run: |
+          cd "$RUNNER_TEMP/nextcloud"
+          args=(--database "${{ matrix.db }}" --admin-user admin --admin-pass "$ADMIN_PASS" --data-dir "$RUNNER_TEMP/ncdata")
+          if [ "${{ matrix.db }}" != sqlite ]; then
+            args+=(--database-host 127.0.0.1 --database-name nextcloud --database-user nextcloud --database-pass nextcloud)
+          fi
+          php occ maintenance:install "${args[@]}"
+          php occ status
+      - name: End-to-end test
+        run: NC="$RUNNER_TEMP/nextcloud" tests/integration/run.sh
+      - name: Nextcloud log on failure
+        if: failure()
+        run: tail -n 80 "$RUNNER_TEMP/ncdata/nextcloud.log" || true

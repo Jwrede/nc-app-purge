@@ -1,0 +1,10 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+foreach (['Util', 'Nextcloud', 'Replay', 'Inventory', 'Fetcher', 'Purge', 'Cli'] as $class) {
+	require_once __DIR__ . '/../src/' . $class . '.php';
+}
+
+exit((new NcAppPurge\Cli())->run($argv));
