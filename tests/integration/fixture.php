@@ -15,9 +15,15 @@ $args = array_slice($argv, 3);
 $nc = NcAppPurge\Nextcloud::boot($root);
 $db = $nc->db;
 
+// Nextcloud's own handler would only log uncaught exceptions to nextcloud.log
+set_exception_handler(function (\Throwable $e): void {
+	fwrite(STDERR, 'fixture: ' . get_class($e) . ': ' . $e->getMessage() . "\n");
+	exit(1);
+});
+
 switch ($cmd) {
 	case 'appdata': // write appdata_<id>/<app>/test/hello.txt
-		$appData = \OCP\Server::get(\OCP\Files\IAppDataFactory::class)->get($args[0]);
+		$appData = \OCP\Server::get(\OCP\Files\AppData\IAppDataFactory::class)->get($args[0]);
 		try {
 			$folder = $appData->getFolder('test');
 		} catch (\OCP\Files\NotFoundException) {

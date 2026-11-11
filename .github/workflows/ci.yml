@@ -52,7 +52,7 @@ jobs:
           POSTGRES_PASSWORD: nextcloud
           POSTGRES_DB: nextcloud
         ports: ["5432:5432"]
-        options: --health-cmd=pg_isready --health-interval=5s --health-retries=20
+        options: --health-cmd="pg_isready -U nextcloud" --health-interval=5s --health-retries=20
     env:
       ADMIN_PASS: "Purge-Test-Admin-1!"
     steps:
