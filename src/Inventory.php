@@ -12,6 +12,9 @@ final class Inventory {
 	/** Folders in appdata_<instanceid> that belong to core, not to an app. */
 	private const CORE_APPDATA = ['preview', 'appstore', 'css', 'js', 'avatar', 'identityproof', 'theming', 'dav-photocache', 'core', 'text', 'files_trashbin', 'files_versions', 'admin', 'settings', 'provisioning_api', 'previews'];
 
+	/** App ids core uses in appconfig/preferences without being an app. */
+	private const CORE_IDS = ['core', 'login', 'avatar', 'backgroundjob'];
+
 	public Replay $replay;
 	/** @var array<string, array<string, mixed>> */
 	public array $apps = [];
@@ -45,7 +48,7 @@ final class Inventory {
 			$this->appDataFolders(),
 			array_keys($extraSources),
 		);
-		$ids = array_values(array_unique(array_filter($ids, fn ($a) => $a !== 'core' && $a !== '')));
+		$ids = array_values(array_unique(array_filter($ids, fn ($a) => $a !== '' && !in_array($a, self::CORE_IDS, true))));
 		sort($ids);
 
 		$live = $this->nc->liveTables();
@@ -162,7 +165,7 @@ final class Inventory {
 		return $out;
 	}
 
-	/** @return array{path: string, bytes: int}|null */
+	/** @return array{path: string, files: int, bytes: int}|null */
 	private function appData(string $app): ?array {
 		if (in_array($app, self::CORE_APPDATA, true)) {
 			return null;
@@ -172,6 +175,21 @@ final class Inventory {
 		} catch (\Throwable) {
 			return null;
 		}
-		return ['path' => $node->getPath(), 'bytes' => (int)$node->getSize()];
+		$files = 0;
+		$bytes = 0;
+		$walk = function (\OCP\Files\Folder $f) use (&$walk, &$files, &$bytes): void {
+			foreach ($f->getDirectoryListing() as $n) {
+				if ($n instanceof \OCP\Files\Folder) {
+					$walk($n);
+				} else {
+					$files++;
+					$bytes += max(0, (int)$n->getSize());
+				}
+			}
+		};
+		if ($node instanceof \OCP\Files\Folder) {
+			$walk($node);
+		}
+		return ['path' => $node->getPath(), 'files' => $files, 'bytes' => $bytes];
 	}
 }

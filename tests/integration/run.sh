@@ -72,11 +72,11 @@ $a = array_column($s["apps"], null, "app");
 $app = $a[$argv[2]] ?? null;
 if (!$app) { fwrite(STDERR, "app missing\n"); exit(1); }
 $exact = count(array_filter($app["tables"], fn ($t) => $t["by"] === "migrations"));
-echo "$exact ", $app["appconfig"] > 0 ? 1 : 0, " ", $app["preferences"], " ", $app["appdata"] !== null ? 1 : 0, " ", $a["ghostapp"]["tables"][0]["by"] ?? "none", "\n";
+echo "$exact ", $app["appconfig"] > 0 ? 1 : 0, " ", $app["preferences"] > 0 ? 1 : 0, " ", $app["appdata"]["files"] ?? 0, " ", $a["ghostapp"]["tables"][0]["by"] ?? "none", "\n";
 ' "$WORK/scan.json" "$APP" >"$WORK/scan.sum"
 read -r exact hascfg prefs hasappdata ghostby <"$WORK/scan.sum"
 eq "$exact" "$tables_before" "scan --fetch attributes all $tables_before tables through the app's migrations"
-eq "$hascfg $prefs $hasappdata" "1 1 1" "scan finds app config, the user preference and appdata"
+eq "$hascfg $prefs $hasappdata" "1 1 1" "scan finds app config, user preferences and the appdata file"
 eq "$ghostby" name "ghostapp table is matched by name only"
 [ ! -d "$NC/apps/$APP" ] || fail "fetched code was not removed"
 ok "temporarily fetched code removed again"
