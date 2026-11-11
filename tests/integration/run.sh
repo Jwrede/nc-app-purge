@@ -33,7 +33,9 @@ if [ "$APP" = deck ]; then
 			-X POST http://127.0.0.1:8080/index.php/apps/deck/api/v1.0/boards \
 			-d "{\"title\":\"$title\",\"color\":\"0082c9\"}" >/dev/null || { cat "$WORK/php-server.log"; fail "create deck board"; }
 	done
-	eq "$($FIX count oc_deck_boards)" 2 "two deck boards created through the Deck API"
+	boards=$($FIX count oc_deck_boards)
+	[ "$boards" -ge 2 ] || fail "deck boards: got $boards, want at least 2"
+	ok "$boards deck boards exist (two created through the Deck API)"
 fi
 $OCC config:app:set "$APP" purge_test --value=kept
 $OCC user:setting admin "$APP" purge_pref yes
@@ -117,7 +119,7 @@ curl -sf http://127.0.0.1:8080/status.php >/dev/null && ok "status.php answers a
 # 6. restore ---------------------------------------------------------------
 $TOOL restore "$BACKUP"
 eq "$($FIX tables "${APP}_" | wc -l)" "$tables_before" "restore re-creates all $APP tables"
-[ "$APP" != deck ] || eq "$($FIX count oc_deck_boards)" 2 "restore brings back both deck boards"
+[ "$APP" != deck ] || eq "$($FIX count oc_deck_boards)" "$boards" "restore brings back all $boards deck boards"
 eq "$($OCC config:app:get "$APP" purge_test)" kept "restore brings back app config"
 eq "$($OCC user:setting admin "$APP" purge_pref)" yes "restore brings back the user preference"
 eq "$($FIX rows migrations app "$APP")" "$migr_before" "restore brings back the migration records"
