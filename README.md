@@ -78,7 +78,7 @@ No Composer dependencies. Run it as the owner of `config/config.php`, like occ:
 sudo -u www-data php /opt/nc-app-purge/bin/nc-app-purge --nextcloud /var/www/nextcloud scan
 ```
 
-Docker (official image, Nextcloud in `/var/www/html`):
+Docker (official image, Nextcloud in `/var/www/html`; not covered by the CI):
 
 ```sh
 docker cp nc-app-purge nextcloud:/tmp/nc-app-purge
@@ -89,11 +89,20 @@ The Nextcloud root can also come from `NEXTCLOUD_ROOT` or the current directory.
 
 ## Example
 
-Output from the CI run against Nextcloud 35.0.2 on PostgreSQL, after
-`occ app:remove deck` and a test app `ghostapp` that is not in the app store:
+Output from the CI run against Nextcloud 35.0.2 on PostgreSQL (CI paths
+replaced by typical ones, purge log shortened), after `occ app:remove deck`
+and a test app `ghostapp` that is not in the app store. The backup directory
+must be writable by the web server user.
 
 ```text
-EXAMPLE_SCAN
+$ sudo -u www-data php bin/nc-app-purge scan
+Nextcloud 35.0.2.2 (pgsql, table prefix oc_)
+
+APP       STATUS   TABLES  ROWS  CONFIG  PREFS  MIGR  JOBS  NOTIF  APPDATA
+deck      removed  0+10?   30    4       2      16    4     0      26 B
+ghostapp  removed  0+1?    1     1       0      1     0     0      -
+
+TABLES: attributed by replayed migrations, "+n?" = n more matched only by name (purge --by-name).
 ```
 
 `TABLES` counts tables attributed through the app's migrations; `+n?` are
@@ -101,20 +110,47 @@ tables that only match by name. Without `--fetch` the Deck tables are only
 name matches, because the Deck code is gone.
 
 ```text
-EXAMPLE_PURGE
+$ sudo -u www-data php bin/nc-app-purge purge deck ghostapp --by-name --backup-dir /srv/nc-purge --yes
+fetched deck from the app store into /var/www/nextcloud/apps/deck (temporary, not enabled)
+could not fetch ghostapp from the app store (Could not download app ghostapp, it was not found on the appstore); its tables can only be matched by name
+removed temporary code of deck
+deck (removed, version 1.19.2):
+  drop table oc_deck_boards
+  drop table oc_deck_stacks
+  drop table oc_deck_cards
+  drop table oc_deck_attachment
+  drop table oc_deck_labels
+  drop table oc_deck_assigned_labels
+  drop table oc_deck_assigned_users
+  drop table oc_deck_board_acl
+  drop table oc_deck_sessions
+  drop table oc_deck_dependent_cards
+  delete 4 app config value(s)
+  delete 2 user preference(s)
+  delete 16 migration record(s)
+  delete 4 background job(s)
+  delete appdata folder /appdata_oc2x3jx1ouy1/deck (26 B)
+ghostapp (removed, version 1.2.3):
+  drop table oc_ghostapp_items
+  delete 1 app config value(s)
+  delete 1 migration record(s)
+  backup written to /srv/nc-purge
+  dropped table oc_deck_boards
+...
+Backup: /srv/nc-purge (restore with: nc-app-purge restore /srv/nc-purge)
 ```
 
 ```sh
 # what would happen
 sudo -u www-data php bin/nc-app-purge purge deck --dry-run
-# every removed app at once, keeping a backup in /root/nc-purge
-sudo -u www-data php bin/nc-app-purge purge --all-removed --backup-dir /root/nc-purge --yes
+# every removed app at once, keeping a backup in /srv/nc-purge
+sudo -u www-data php bin/nc-app-purge purge --all-removed --backup-dir /srv/nc-purge --yes
 # undo
-sudo -u www-data php bin/nc-app-purge restore /root/nc-purge
+sudo -u www-data php bin/nc-app-purge restore /srv/nc-purge
 ```
 
-`scan --json` and `purge --json` give machine-readable output; `scan -v`
-lists every table, job and folder.
+`scan --json` gives machine-readable output; `scan -v` lists every table,
+job and folder.
 
 ## Tests
 
@@ -131,7 +167,8 @@ lists every table, job and folder.
   db:schema:check -v` no longer reports the tables (35); `occ status` and
   `status.php` still work; restore brings back tables, boards, config,
   preference, migration records, appdata and binary data; a second restore
-  refuses; after another purge `occ app:install deck` gives a fresh, empty app.
+  refuses; `purge --all-removed` finds both apps again; after it
+  `occ app:install deck` gives a fresh, empty app.
 
 ## Limits
 

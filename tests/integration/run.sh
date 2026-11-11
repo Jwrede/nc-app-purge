@@ -129,7 +129,9 @@ if $TOOL restore "$BACKUP" >/dev/null 2>&1; then fail "restore over existing tab
 ok "second restore refuses because the tables exist"
 
 # 7. purge again, then a clean reinstall works ----------------------------
-$TOOL purge "$APP" ghostapp --by-name --yes --no-backup >/dev/null
+$TOOL purge --all-removed --by-name --yes --no-backup >"$WORK/purge-all.txt"
+grep -q "dropped table oc_ghostapp_items" "$WORK/purge-all.txt" || fail "--all-removed did not purge ghostapp"
+eq "$($FIX tables "${APP}_" | wc -l)" 0 "purge --all-removed drops the restored tables again"
 $OCC app:install "$APP"
 [ "$APP" != deck ] || eq "$($FIX count oc_deck_boards)" 0 "reinstalled app starts empty"
 eq "$($OCC config:app:get "$APP" purge_test || true)" "" "reinstalled app has no old config"

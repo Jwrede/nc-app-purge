@@ -62,7 +62,7 @@ final class Purge {
 			if ($entry[$kind] > 0) {
 				$qb = $this->nc->db->getQueryBuilder();
 				$n = $qb->delete($table)->where($qb->expr()->eq($col, $qb->createNamedParameter($app)))->executeStatement();
-				$this->log[] = "deleted $n $kind row(s)";
+				$this->log[] = "deleted $n " . ($kind === 'migrations' ? 'migration record(s)' : 'notification(s)');
 			}
 		}
 		if ($entry['preferences'] > 0) {
@@ -174,7 +174,9 @@ final class Purge {
 					continue;
 				}
 				$n = $this->insertRows($this->nc->prefix . $table, $file, null, $app);
-				$this->log[] = "restored $n $kind row(s) for $app";
+				if ($n > 0) {
+					$this->log[] = "restored $n $kind row(s) for $app";
+				}
 			}
 			$src = "$dir/appdata/$app";
 			if (is_dir($src)) {

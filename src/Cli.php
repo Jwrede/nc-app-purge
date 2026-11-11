@@ -40,7 +40,7 @@ purge                delete the leftovers of the named apps (never enabled or sh
 restore              re-create tables, rows and appdata from a backup
   --skip-existing    keep tables that exist again instead of refusing
 
-Common: --json (machine-readable output), -v / --verbose, --help, --version
+Common: --json (scan only, machine-readable output), -v / --verbose, --help, --version
 TXT;
 
 	private bool $json = false;
