@@ -161,7 +161,8 @@ job and folder.
   weekly on Mondays as well. It installs Deck from the app store, creates
   boards through the Deck API, adds app config, a user preference, an appdata
   file and a fake app with a binary column, runs `occ app:remove`, and then
-  checks: scan finds everything; `--fetch` attributes every Deck table; a dry
+  checks: scan finds everything, also when called as `php bin/nc-app-purge`
+  from another directory; `--fetch` attributes every Deck table; a dry
   run changes nothing; enabled apps are refused; the purge drops all tables
   and rows, deletes the appdata folder and background jobs; `occ
   db:schema:check -v` no longer reports the tables (35); `occ status` and

@@ -64,6 +64,9 @@ grep -Eq "^$APP +removed" "$WORK/scan.txt" || fail "scan does not list $APP as r
 ok "scan lists $APP as removed"
 grep -Eq "^ghostapp +removed" "$WORK/scan.txt" || fail "scan does not list ghostapp"
 ok "scan lists ghostapp as removed"
+(cd "$HERE/../.." && php bin/nc-app-purge --nextcloud "$NC" scan >"$WORK/scan-relative.txt") || fail "scan with a relative script path"
+grep -Eq "^$APP +removed" "$WORK/scan-relative.txt" || fail "scan with a relative script path does not list $APP"
+ok "scan works with a relative script path from another directory (#1)"
 
 $TOOL scan --fetch --json >"$WORK/scan.json"
 php -r '

@@ -31,6 +31,12 @@ final class Nextcloud {
 		if (!defined('OC_CONSOLE')) {
 			define('OC_CONSOLE', 1);
 		}
+		// OC::initPaths() resolves SCRIPT_FILENAME after our chdir(); a relative
+		// path (php bin/nc-app-purge) would then no longer resolve (issue #1).
+		$script = realpath($_SERVER['SCRIPT_FILENAME'] ?? '');
+		if ($script !== false) {
+			$_SERVER['SCRIPT_FILENAME'] = $script;
+		}
 		chdir($root);
 		require_once $root . '/lib/base.php';
 		if (!\OC::$CLI) {
