@@ -32,17 +32,24 @@ switch ($cmd) {
 		$folder->newFile('hello.txt', "hello from the purge test\n");
 		echo "ok\n";
 		break;
-	case 'ghost': // an app that no app store knows: table, config, migration record
+	case 'ghost': // an app that no app store knows: two tables with a foreign key, config, migration record
 		$schema = new Schema();
 		$t = $schema->createTable($nc->prefix . 'ghostapp_items');
 		$t->addColumn('id', 'bigint', ['autoincrement' => true, 'notnull' => true]);
 		$t->addColumn('label', 'string', ['length' => 64, 'notnull' => true]);
 		$t->addColumn('payload', 'blob', ['notnull' => false]);
 		$t->setPrimaryKey(['id']);
+		// a second table referencing the first: dropping ghostapp_items first must not fail
+		$c = $schema->createTable($nc->prefix . 'ghostapp_tags');
+		$c->addColumn('id', 'bigint', ['autoincrement' => true, 'notnull' => true]);
+		$c->addColumn('item_id', 'bigint', ['notnull' => true]);
+		$c->setPrimaryKey(['id']);
+		$c->addForeignKeyConstraint($nc->prefix . 'ghostapp_items', ['item_id'], ['id'], ['onDelete' => 'CASCADE'], 'ghostapp_tags_item');
 		foreach ($schema->toSql($db->getDatabasePlatform()) as $sql) {
 			$db->executeStatement($sql);
 		}
 		$db->insert($nc->prefix . 'ghostapp_items', ['label' => 'one', 'payload' => "\x00\x01\xff"], [\Doctrine\DBAL\ParameterType::STRING, \Doctrine\DBAL\ParameterType::LARGE_OBJECT]);
+		$db->insert($nc->prefix . 'ghostapp_tags', ['item_id' => (int)$db->lastInsertId($nc->prefix . 'ghostapp_items')]);
 		\OCP\Server::get(\OCP\IConfig::class)->setAppValue('ghostapp', 'installed_version', '1.2.3');
 		$qb = $db->getQueryBuilder();
 		$qb->insert('migrations')->values(['app' => $qb->createNamedParameter('ghostapp'), 'version' => $qb->createNamedParameter('010203Date20200101000000')])->executeStatement();

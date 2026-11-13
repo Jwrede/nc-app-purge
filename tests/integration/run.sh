@@ -40,7 +40,7 @@ fi
 $OCC config:app:set "$APP" purge_test --value=kept
 $OCC user:setting admin "$APP" purge_pref yes
 eq "$($FIX appdata "$APP")" ok "appdata file written"
-eq "$($FIX ghost)" ok "ghost app with table, config and migration record"
+eq "$($FIX ghost)" ok "ghost app with two tables (one foreign key), config and migration record"
 tables_before=$($FIX tables "${APP}_" | wc -l)
 [ "$tables_before" -gt 0 ] || fail "app has no tables"
 ok "$APP has $tables_before tables"

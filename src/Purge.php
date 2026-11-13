@@ -46,6 +46,13 @@ final class Purge {
 			$this->backup($entry, $tables, $backupDir);
 		}
 		$sm = $this->nc->db->createSchemaManager();
+		// Drop foreign keys between the app's tables first, otherwise the drop order matters
+		// (e.g. news_feeds.folder -> news_folders) and PostgreSQL refuses with 2BP01.
+		foreach ($tables as $t) {
+			foreach ($sm->listTableForeignKeys($t) as $fk) {
+				$sm->dropForeignKey($fk, $t);
+			}
+		}
 		foreach ($tables as $t) {
 			$sm->dropTable($t);
 			$this->log[] = "dropped table $t";
