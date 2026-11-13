@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NcAppPurge;
 
 use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Platforms\SqlitePlatform;
 use Doctrine\DBAL\Types\Types;
 
 /**
@@ -46,17 +47,21 @@ final class Purge {
 			$this->backup($entry, $tables, $backupDir);
 		}
 		$sm = $this->nc->db->createSchemaManager();
-		// Drop foreign keys between the app's tables first, otherwise the drop order matters
-		// (e.g. news_feeds.folder -> news_folders) and PostgreSQL refuses with 2BP01.
-		foreach ($tables as $t) {
-			foreach ($sm->listTableForeignKeys($t) as $fk) {
-				$sm->dropForeignKey($fk, $t);
+		// Foreign keys between the app's tables would make the drop order matter
+		// (e.g. news_feeds.folder -> news_folders; PostgreSQL refuses with 2BP01).
+		$this->withoutForeignKeyChecks(function () use ($sm, $tables): void {
+			if (!$this->isSqlite()) { // SQLite cannot drop a foreign key on its own
+				foreach ($tables as $t) {
+					foreach ($sm->listTableForeignKeys($t) as $fk) {
+						$sm->dropForeignKey($fk, $t);
+					}
+				}
 			}
-		}
-		foreach ($tables as $t) {
-			$sm->dropTable($t);
-			$this->log[] = "dropped table $t";
-		}
+			foreach ($tables as $t) {
+				$sm->dropTable($t);
+				$this->log[] = "dropped table $t";
+			}
+		});
 		foreach ($entry['jobs'] as $job) {
 			$qb = $this->nc->db->getQueryBuilder();
 			$qb->delete('jobs')->where($qb->expr()->eq('id', $qb->createNamedParameter($job['id'], ParameterType::INTEGER)))->executeStatement();
@@ -107,7 +112,9 @@ final class Purge {
 			foreach ($table->getColumns() as $c) {
 				$columns[$c->getName()] = \Doctrine\DBAL\Types\Type::lookupName($c->getType());
 			}
-			$this->writeJson("$dir/tables/$t.json", ['app' => $app, 'create' => $platform->getCreateTableSQL($table), 'columns' => $columns]);
+			// getCreateTableSQL() leaves out foreign keys (except on SQLite); getCreateTablesSQL()
+			// appends them as ALTER TABLE statements, which restore() runs last.
+			$this->writeJson("$dir/tables/$t.json", ['app' => $app, 'create' => $platform->getCreateTablesSQL([$table]), 'columns' => $columns]);
 			$q = $platform->quoteIdentifier($t);
 			$this->writeRows("$dir/tables/$t.jsonl", $this->nc->db->executeQuery("SELECT * FROM $q"), null);
 		}
@@ -161,7 +168,21 @@ final class Purge {
 		if ($existing !== [] && !$skipExisting) {
 			throw new \RuntimeException('tables already exist (app reinstalled?): ' . implode(', ', $existing) . '. Remove them or pass --skip-existing.');
 		}
-		foreach ($manifest['apps'] as $app => $m) {
+		$this->withoutForeignKeyChecks(fn () => $this->restoreApps($dir, $manifest['apps'], $existing));
+		$this->nc->clearAppConfigCache();
+	}
+
+	/**
+	 * @param array<string, array<string, mixed>> $apps manifest apps
+	 * @param list<string> $existing tables to skip
+	 */
+	private function restoreApps(string $dir, array $apps, array $existing): void {
+		// Foreign keys are added after all tables exist and hold their rows, so neither the
+		// table order nor the row order matters. backup() stores them as separate ALTER TABLE
+		// statements, except on SQLite where they are inline (and not checked while
+		// withoutForeignKeyChecks() runs).
+		$foreignKeys = [];
+		foreach ($apps as $app => $m) {
 			foreach ($m['tables'] as $t) {
 				if (in_array($t, $existing, true)) {
 					$this->log[] = "skipped existing table $t";
@@ -169,6 +190,10 @@ final class Purge {
 				}
 				$def = json_decode((string)file_get_contents("$dir/tables/$t.json"), true);
 				foreach ($def['create'] as $sql) {
+					if (preg_match('/^ALTER TABLE\s.*\sFOREIGN KEY\s/is', $sql)) {
+						$foreignKeys[] = $sql;
+						continue;
+					}
 					$this->nc->db->executeStatement($sql);
 				}
 				$n = $this->insertRows($t, "$dir/tables/$t.jsonl", $def['columns'], null);
@@ -193,7 +218,33 @@ final class Purge {
 				$this->log[] = "restored appdata for $app";
 			}
 		}
-		$this->nc->clearAppConfigCache();
+		foreach ($foreignKeys as $sql) {
+			$this->nc->db->executeStatement($sql);
+		}
+		if ($foreignKeys !== []) {
+			$this->log[] = 'restored ' . count($foreignKeys) . ' foreign key(s)';
+		}
+	}
+
+	private function isSqlite(): bool {
+		return $this->nc->db->getDatabasePlatform() instanceof SqlitePlatform;
+	}
+
+	/**
+	 * Nextcloud enables PRAGMA foreign_keys on SQLite: DROP TABLE of a referenced table and
+	 * inserting rows before the rows they reference would fail, so switch the checks off.
+	 */
+	private function withoutForeignKeyChecks(callable $fn): void {
+		if (!$this->isSqlite()) {
+			$fn();
+			return;
+		}
+		$this->nc->db->executeStatement('PRAGMA foreign_keys = false');
+		try {
+			$fn();
+		} finally {
+			$this->nc->db->executeStatement('PRAGMA foreign_keys = true');
+		}
 	}
 
 	/**

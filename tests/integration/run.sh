@@ -40,7 +40,7 @@ fi
 $OCC config:app:set "$APP" purge_test --value=kept
 $OCC user:setting admin "$APP" purge_pref yes
 eq "$($FIX appdata "$APP")" ok "appdata file written"
-eq "$($FIX ghost)" ok "ghost app with two tables (one foreign key), config and migration record"
+eq "$($FIX ghost)" ok "ghost app with three tables (two foreign keys), config and migration record"
 tables_before=$($FIX tables "${APP}_" | wc -l)
 [ "$tables_before" -gt 0 ] || fail "app has no tables"
 ok "$APP has $tables_before tables"
@@ -128,6 +128,9 @@ eq "$($OCC user:setting admin "$APP" purge_pref)" yes "restore brings back the u
 eq "$($FIX rows migrations app "$APP")" "$migr_before" "restore brings back the migration records"
 eq "$($FIX appdata-exists "$APP")" yes "restore brings back appdata"
 eq "$($FIX blob)" 0001ff "restore keeps binary data"
+eq "$($FIX tables ghostapp_ | wc -l)" 3 "restore re-creates all ghost tables, including the ones with foreign keys"
+eq "$($FIX count oc_ghostapp_attachments) $($FIX count oc_ghostapp_tags)" "1 1" "restore brings back rows that reference another table"
+eq "$($FIX fks oc_ghostapp_attachments) $($FIX fks oc_ghostapp_tags)" "1 1" "restore brings back the foreign keys"
 if $TOOL restore "$BACKUP" >/dev/null 2>&1; then fail "restore over existing tables did not refuse"; fi
 ok "second restore refuses because the tables exist"
 
